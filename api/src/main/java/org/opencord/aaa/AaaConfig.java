@@ -40,6 +40,7 @@ public class AaaConfig extends Config<ApplicationId> {
     private static final String RADIUS_HOST = "radiusHost";
     private static final String RADIUS_IP = "radiusIp";
     private static final String RADIUS_SERVER_PORT = "radiusServerPort";
+    private static final String SESSION_CLEANUP_TIMER = "sessionCleanupTimer";
     private static final String RADIUS_MAC = "radiusMac";
     private static final String NAS_IP = "nasIp";
     private static final String NAS_MAC = "nasMac";
@@ -72,6 +73,9 @@ public class AaaConfig extends Config<ApplicationId> {
 
     // Radius Server UDP Port Number
     protected static final String DEFAULT_RADIUS_SERVER_PORT = "1812";
+
+    // Time configured for triggering timeouts in AAA app
+    protected static final String DEFAULT_SESSION_CLEANUP_TIMER = "10";
 
     // Radius Server Vlan ID
     protected static final String DEFAULT_RADIUS_VLAN_ID = "4093";
@@ -261,6 +265,16 @@ public class AaaConfig extends Config<ApplicationId> {
      */
     public String radiusPktCustomizer() {
         return getStringProperty(PACKET_CUSTOMIZER, DEFAULT_PACKET_CUSTOMIZER);
+    }
+
+    /**
+     * Returns the time configured for checking timeout .
+     *
+     * @return timerTimeout
+     */
+    public int sessionCleanupTimer() {
+        return Integer
+                .parseInt(getStringProperty(SESSION_CLEANUP_TIMER, DEFAULT_SESSION_CLEANUP_TIMER));
     }
 
     /**

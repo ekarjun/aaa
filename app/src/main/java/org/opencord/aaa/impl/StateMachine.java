@@ -20,11 +20,14 @@ package org.opencord.aaa.impl;
 import com.google.common.collect.Maps;
 import org.onlab.packet.MacAddress;
 import org.onosproject.net.ConnectPoint;
-import org.opencord.aaa.AuthenticationEvent;
-import org.opencord.aaa.StateMachineDelegate;
+import org.opencord.aaa.*;
 import org.slf4j.Logger;
 
+import java.util.HashSet;
 import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -39,6 +42,13 @@ class StateMachine {
     static final int STATE_PENDING = 2;
     static final int STATE_AUTHORIZED = 3;
     static final int STATE_UNAUTHORIZED = 4;
+
+    // Defining the states where timeout can happen
+    static final Set<Integer> TIMEOUT_ELIGIBLE_STATES = new HashSet();
+    static {
+        TIMEOUT_ELIGIBLE_STATES.add(STATE_STARTED);
+        TIMEOUT_ELIGIBLE_STATES.add(STATE_PENDING);
+    }
 
     //INDEX to identify the transition in the transition table
     static final int TRANSITION_START = 0; // --> started
@@ -58,10 +68,50 @@ class StateMachine {
     private MacAddress supplicantAddress;
     private short vlanId;
     private byte priorityCode;
+    private long sessionStartTime;
+    private String eapolType;
+
+    public enum eapolTyp {
+        EAPOL_PACKET((byte)0),
+        EAPOL_START((byte)1),
+        EAPOL_LOGOFF((byte)2),
+        EAPOL_KEY ((byte)3),
+        EAPOL_ASF((byte)4);
+
+        private final byte eaptype;
+
+        private eapolTyp (byte value) {
+            this.eaptype = value;
+        }
+
+        public static Stream<eapolTyp> stream() {
+            return Stream.of(eapolTyp.values());
+        }
+    };
+
+    private String sessionTerminateReason;
+    
+    // Supplicant packet count
+    private int totalPacketsSent;
+    private int totalPacketsReceived;
+    private int totalOctetSent;
+    private int totalOctetReceived;
 
     private String sessionId = null;
 
     private final Logger log = getLogger(getClass());
+
+    // Boolean flag indicating whether response is pending from AAA Server.
+    // Used for counting timeout happening for AAA Sessions due to no response.
+    private boolean waitingForRadiusResponse;
+
+    private static int cleanupTimerTimeOutInMins;
+
+    // Cleanup Timer instance created for this session
+    private java.util.concurrent.ScheduledFuture<?> cleanupTimer = null;
+
+    // TimeStamp of last EAPOL or RADIUS message received.
+    private long lastPacketReceivedTime = 0;
 
     private State[] states = {
             new Idle(), new Started(), new Pending(), new Authorized(), new Unauthorized()
@@ -127,6 +177,10 @@ class StateMachine {
         StateMachine.delegate = delegate;
     }
 
+    public static void setcleanupTimerTimeOutInMins(int cleanupTimerTimeoutInMins) {
+        cleanupTimerTimeOutInMins = cleanupTimerTimeoutInMins;
+    }
+
     public static void unsetDelegate(StateMachineDelegate delegate) {
         if (StateMachine.delegate == delegate) {
             StateMachine.delegate = null;
@@ -147,6 +201,30 @@ class StateMachine {
 
     public static void deleteStateMachineMapping(StateMachine machine) {
         identifierMap.entrySet().removeIf(e -> e.getValue().equals(machine));
+        if (machine.cleanupTimer != null) {
+            machine.cleanupTimer.cancel(false);
+            machine.cleanupTimer = null;
+        }
+    }
+
+    public java.util.concurrent.ScheduledFuture<?> getCleanupTimer() {
+        return cleanupTimer;
+    }
+
+    public boolean isWaitingForRadiusResponse() {
+        return waitingForRadiusResponse;
+    }
+
+    public void setWaitingForRadiusResponse(boolean waitingForRadiusResponse) {
+        this.waitingForRadiusResponse = waitingForRadiusResponse;
+    }
+
+    public void setCleanupTimer(java.util.concurrent.ScheduledFuture<?> cleanupTimer) {
+        this.cleanupTimer = cleanupTimer;
+    }
+
+    public static void deleteStateMachineId(String sessionId) {
+        sessionIdMap.remove(sessionId);
     }
 
     /**
@@ -180,7 +258,7 @@ class StateMachine {
     public StateMachine(String sessionId) {
         log.info("Creating a new state machine for {}", sessionId);
         this.sessionId = sessionId;
-        sessionIdMap.put(sessionId, this);
+        sessionIdMap.put(sessionId, this);        
     }
 
     /**
@@ -220,6 +298,24 @@ class StateMachine {
     }
 
     /**
+     * Sets the lastPacketReceivedTime.
+     *
+     * @param lastPacketReceivedTime timelastPacket was received
+     */
+    public void setLastPacketReceivedTime(long lastPacketReceivedTime) {
+        this.lastPacketReceivedTime = lastPacketReceivedTime;
+    }
+
+    /**
+     * Gets the lastPacketReceivedTime.
+     *
+     * @return lastPacketReceivedTime
+     */
+    public long getLastPacketReceivedTime() {
+        return lastPacketReceivedTime;
+    }
+    
+    /**
      * Gets the client's Vlan ID.
      *
      * @return client vlan ID
@@ -253,6 +349,95 @@ class StateMachine {
      */
     public void setPriorityCode(byte priorityCode) {
         this.priorityCode = priorityCode;
+    }
+    
+    /**
+     * Gets the session start time.
+     * 
+     * @return session start time
+     */
+    public long sessionStartTime() {
+    	return sessionStartTime;
+    }
+    
+    /**
+     * Sets the session start time.
+     * 
+     * @param sessionStartTime new session start time
+     */
+    public void setSessionStartTime(long sessionStartTime) {
+    	this.sessionStartTime = sessionStartTime;
+    }
+    
+    public String eapolType() {
+    	return this.eapolType;
+    }
+    
+    public void setEapolType(String eapolType) {
+    	this.eapolType = eapolType;
+    }
+
+    public void setEapolTyp(byte eapolType) {
+        this.eapolType = eapolTyp.stream()
+                .filter(d -> Byte.compare(d.eaptype, eapolType) == 0)
+                .findAny()
+                .orElseThrow(NoSuchElementException::new).name();
+    }
+         
+    public String getSessionTerminateReason() {
+		return sessionTerminateReason;
+	}
+
+	public void setSessionTerminateReason(String sessionTerminateReason) {
+		this.sessionTerminateReason = sessionTerminateReason;
+	}
+
+	public int totalPacketsReceived() {
+    	return this.totalPacketsReceived;
+    }
+    
+    public void incrementTotalPacketsReceived() {
+    	this.totalPacketsReceived = this.totalPacketsReceived + 1;
+    }
+    
+    public int totalPacketsSent() {
+    	return this.totalPacketsSent;
+    }
+    
+    public void incrementTotalPacketsSent() {
+    	this.totalPacketsSent = this.totalPacketsSent + 1;
+    }
+    
+    public void intializeTotalPacketsSent() {
+    	this.totalPacketsSent = 0;
+    }
+    
+    public void intializeTotalPacketsReceived() {
+    	this.totalPacketsReceived = 0;
+    }
+    
+    public int totalOctetReceived() {
+    	return this.totalOctetReceived;
+    }
+    
+    public void incrementTotalOctetReceived(short packetLen) {
+    	this.totalOctetReceived = this.totalOctetReceived + packetLen;
+    }
+    
+    public int totalOctetSent() {
+    	return this.totalOctetSent;
+    }
+    
+    public void incrementTotalOctetSent(short packetLen) {
+    	this.totalOctetSent = this.totalOctetSent + packetLen;
+    }
+    
+    public void intializeTotalOctetSent() {
+    	this.totalOctetSent = 0;
+    }
+    
+    public void intializeTotalOctetReceived() {
+    	this.totalOctetReceived = 0;
     }
 
     /**
@@ -567,5 +752,59 @@ class StateMachine {
         }
     }
 
+    /**
+     * Class for cleaning the StateMachine for those session for which no response
+     * is coming--implementing timeout.
+     */
+    class CleanupTimerTask implements Runnable {
+        private final Logger log = getLogger(getClass());
+        private String sessionId;
+        private AaaManager aaaManager;
+
+        CleanupTimerTask(String sessionId, AaaManager aaaManager) {
+            this.sessionId = sessionId;
+            this.aaaManager = aaaManager;
+        }
+
+        @Override
+        public void run() {
+            StateMachine stateMachine = StateMachine.lookupStateMachineBySessionId(sessionId);
+            if (null != stateMachine) {
+                // Asserting if last packet received for this stateMachine session was beyond half of timeout period.
+                // StateMachine is considered eligible for cleanup when no packets has been exchanged by it with AAA
+                // Server or RG during a long period (half of timeout period). For example, when cleanup timer has
+                // been configured as 10 minutes, StateMachine would be cleaned up at the end of 10 minutes if
+                // the authentication is still pending and no packet was exchanged for this session during last 5
+                // minutes.
+
+                boolean noTrafficWithinThreshold = (System.currentTimeMillis()
+                        - stateMachine.getLastPacketReceivedTime()) > ((cleanupTimerTimeOutInMins * 60 * 1000) / 2);
+
+                        if ((TIMEOUT_ELIGIBLE_STATES.contains(stateMachine.state())) && noTrafficWithinThreshold) {
+                            log.info("Deleting StateMachineMapping for sessionId: {}", sessionId);
+                            cleanupTimer = null;
+                            if (stateMachine.state() == STATE_PENDING && stateMachine.isWaitingForRadiusResponse()) {
+                                aaaManager.aaaStatisticsManager.getAaaStats().increaseTimedOutPackets();
+                            }
+                            //pushing captured machine stats to kafka
+                            stateMachine.setSessionTerminateReason("Time out");
+                            AaaSupplicantMachineStats obj = aaaManager.aaaSupplicantStatsManager.getSupplicantStats(stateMachine);
+                            aaaManager.aaaSupplicantStatsManager.getMachineStatsDelegate()
+                                    .notify(new AaaMachineStatisticsEvent(AaaMachineStatisticsEvent.Type.STATS_UPDATE, obj));
+                            deleteStateMachineId(sessionId);
+                            deleteStateMachineMapping(stateMachine);
+
+                            // If StateMachine is not eligible for cleanup yet, reschedule cleanupTimer further.
+                        } else {
+                            aaaManager.scheduleStateMachineCleanupTimer(sessionId, stateMachine);
+                        }
+            } else {
+                // This statement should not be logged; cleanupTimer should be cancelled for stateMachine
+                // instances which have been authenticated successfully.
+                log.warn("state-machine not found for sessionId: {}", sessionId);
+            }
+
+        }
+    }
 
 }
