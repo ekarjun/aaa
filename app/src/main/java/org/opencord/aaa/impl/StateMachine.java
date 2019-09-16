@@ -83,21 +83,6 @@ class StateMachine {
         private eapolType(String value) {
             this.eaptype = value;
         }
-//        EAPOL_PACKET((byte)0),
-//        EAPOL_START((byte)1),
-//        EAPOL_LOGOFF((byte)2),
-//        EAPOL_KEY ((byte)3),
-//        EAPOL_ASF((byte)4);
-//
-//        private final byte eaptype;
-//
-//        private eapolType(byte value) {
-//            this.eaptype = value;
-//        }
-//
-//        public static Stream<eapolType> stream() {
-//            return Stream.of(eapolType.values());
-//        }
     };
 
     private String sessionTerminateReason;
