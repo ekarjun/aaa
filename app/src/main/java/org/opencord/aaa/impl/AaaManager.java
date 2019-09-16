@@ -162,7 +162,7 @@ public class AaaManager
     private ApplicationId appId;
 
     // TimeOut time for cleaning up stateMachines stuck due to pending AAA/EAPOL message.
-    protected int cleanupTimerTimeOutInMins;
+    private int cleanupTimerTimeOutInMins;
 
     // Setup specific customization/attributes on the RADIUS packets
     PacketCustomizer pktCustomizer;
@@ -607,14 +607,7 @@ public class AaaManager
                 stateMachine = new StateMachine(sessionId);
             } else {
                 log.debug("Using existing state-machine for sessionId: {}", sessionId);
-                byte[] eapolTypeinBytes = new byte[] {eapol.getEapolType()};
-                String eapolTypeinString = new String(eapolTypeinBytes);
-                log.debug("eapolTypeinBytes : " + eapolTypeinBytes);
-                log.debug("eapolTypeinString : " + eapolTypeinString + ", " + eapolTypeinString.toString());
-                stateMachine.setEapolType(eapolTypeinString);
-                log.debug("eapolType before using enum: " + stateMachine.eapolType());
-                stateMachine.setEapolTyp(eapol.getEapolType());
-                log.debug("eapolType after using enum: " + stateMachine.eapolType());
+                stateMachine.setEapolTypeVal(eapol.getEapolType());
             }
 
             switch (eapol.getEapolType()) {
@@ -638,12 +631,6 @@ public class AaaManager
 
                     stateMachine.setSupplicantAddress(srcMac);
                     stateMachine.setVlanId(ethPkt.getVlanID());
-
-                    //intialize packets and octets count.
-//                    stateMachine.intializeTotalPacketsReceived();
-//                    stateMachine.intializeTotalPacketsSent();
-//                    stateMachine.intializeTotalOctetReceived();
-//                    stateMachine.intializeTotalOctetSent();
 
                     log.debug("Getting EAP identity from supplicant {}", stateMachine.supplicantAddress().toString());
                     sendPacketToSupplicant(eth, stateMachine.supplicantConnectpoint());
@@ -849,7 +836,6 @@ public class AaaManager
 
                     StateMachine stateMachine = StateMachine.lookupStateMachineBySessionId(sessionId);
                     if (stateMachine != null) {
-                    	log.debug("state machine instance exits");
                     	stateMachine.setSessionTerminateReason("Port Removed");
                     }
                     //pushing captured machine stats to kafka

@@ -29,6 +29,8 @@ public class AaaStatistics {
     private AtomicLong accessRequestsTx = new AtomicLong();
     //Number of access request packets pending a response from the server
     private AtomicLong pendingRequests = new AtomicLong();
+    // Number of packets send to the server which timed out.
+    private AtomicLong timedOutPackets = new AtomicLong();
     //Number of packets of an unknown RADIUS type received from the accounting server
     private AtomicLong unknownTypeRx = new AtomicLong();
     //Number of access response packets received from the server with an invalid validator
@@ -152,5 +154,13 @@ public class AaaStatistics {
         numberOfDroppedPackets += malformedResponsesRx.get();
         numberOfDroppedPackets += numberOfSessionsExpired.get();
         this.droppedResponsesRx = new AtomicLong(numberOfDroppedPackets);
+    }
+
+    public long getTimedOutPackets() {
+        return timedOutPackets.get();
+    }
+
+    public void increaseTimedOutPackets() {
+        timedOutPackets.incrementAndGet();
     }
 }

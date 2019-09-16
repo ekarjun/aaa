@@ -69,24 +69,35 @@ class StateMachine {
     private short vlanId;
     private byte priorityCode;
     private long sessionStartTime;
-    private String eapolType;
+    private String eapolTypeVal;
 
-    public enum eapolTyp {
-        EAPOL_PACKET((byte)0),
-        EAPOL_START((byte)1),
-        EAPOL_LOGOFF((byte)2),
-        EAPOL_KEY ((byte)3),
-        EAPOL_ASF((byte)4);
+    public enum eapolType {
+        EAPOL_PACKET("EAPOL_PACKET"),
+        EAPOL_START("EAPOL_START"),
+        EAPOL_LOGOFF("EAPOL_LOGOFF"),
+        EAPOL_KEY ("EAPOL_KEY"),
+        EAPOL_ASF("EAPOL_ASF");
 
-        private final byte eaptype;
+        private final String eaptype;
 
-        private eapolTyp (byte value) {
+        private eapolType(String value) {
             this.eaptype = value;
         }
-
-        public static Stream<eapolTyp> stream() {
-            return Stream.of(eapolTyp.values());
-        }
+//        EAPOL_PACKET((byte)0),
+//        EAPOL_START((byte)1),
+//        EAPOL_LOGOFF((byte)2),
+//        EAPOL_KEY ((byte)3),
+//        EAPOL_ASF((byte)4);
+//
+//        private final byte eaptype;
+//
+//        private eapolType(byte value) {
+//            this.eaptype = value;
+//        }
+//
+//        public static Stream<eapolType> stream() {
+//            return Stream.of(eapolType.values());
+//        }
     };
 
     private String sessionTerminateReason;
@@ -258,7 +269,7 @@ class StateMachine {
     public StateMachine(String sessionId) {
         log.info("Creating a new state machine for {}", sessionId);
         this.sessionId = sessionId;
-        sessionIdMap.put(sessionId, this);        
+        sessionIdMap.put(sessionId, this);
     }
 
     /**
@@ -368,20 +379,35 @@ class StateMachine {
     public void setSessionStartTime(long sessionStartTime) {
     	this.sessionStartTime = sessionStartTime;
     }
-    
+
+    /**
+     * returns eapol Type.
+     *
+     * @return eapolTypeVal.
+     */
     public String eapolType() {
-    	return this.eapolType;
-    }
-    
-    public void setEapolType(String eapolType) {
-    	this.eapolType = eapolType;
+    	return this.eapolTypeVal;
     }
 
-    public void setEapolTyp(byte eapolType) {
-        this.eapolType = eapolTyp.stream()
-                .filter(d -> Byte.compare(d.eaptype, eapolType) == 0)
-                .findAny()
-                .orElseThrow(NoSuchElementException::new).name();
+    /**
+     * Sets eapol Type name from eapol value.
+     *
+     * @param value eapol type as byte.
+     */
+    public void setEapolTypeVal(byte value) {
+        switch (value) {
+            case (byte)0 : this.eapolTypeVal = eapolType.EAPOL_PACKET.eaptype;
+                           break;
+            case (byte)1 : this.eapolTypeVal = eapolType.EAPOL_START.eaptype;
+                           break;
+            case (byte)2 : this.eapolTypeVal = eapolType.EAPOL_LOGOFF.eaptype;
+                           break;
+            case (byte)3 : this.eapolTypeVal = eapolType.EAPOL_KEY.eaptype;
+                           break;
+            case (byte)4 : this.eapolTypeVal = eapolType.EAPOL_ASF.eaptype;
+                           break;
+            default : this.eapolTypeVal = "INVALID TYPE";
+        }
     }
          
     public String getSessionTerminateReason() {
